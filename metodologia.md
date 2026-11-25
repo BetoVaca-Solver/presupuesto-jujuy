@@ -49,3 +49,9 @@ El gasto total excluye las aplicaciones financieras. La amortización está expu
 - [Jujuy, Ley 6440, arts. 1 a 5](https://boletinoficial.jujuy.gob.ar/?p=303334)
 - [Jujuy, Ley 6490, arts. 1 a 5](https://boletinoficial.jujuy.gob.ar/?p=324229)
 - [Jujuy, proyecto 2027, arts. 1 a 5, págs. 4 y 5 del PDF](https://drive.google.com/file/d/10MFsmYh9fgqPaH7d3uqZg7cTbm71SsDd/view)
+
+## Año base y fichas temáticas
+
+La interfaz permite dejar los pesos corrientes de origen o elegir pesos promedio de 2025, 2026 o 2027. Para cambiar el año base, se divide el monto constante expresado a precios de 2025 por el factor anual del nuevo año base. El cambio de base modifica el nivel de los montos y conserva la variación real entre períodos, salvo redondeo. Las bases 2026 y 2027 incluyen niveles de IPC proyectados. En indicadores monetarios mensuales se aplica el IPC del mes antes de cambiar la base de precios. Los porcentajes, el IPC publicado y los conteos conservan la unidad original.
+
+En 2027 se incorporan por separado los presupuestos institucionales de Salud, Educación, Cultura y Turismo, Desarrollo Humano y Seguridad (Planilla 6) y las construcciones en bienes de dominio público y privado (suma de los renglones de la Planilla 15). Estas cifras tienen distinto alcance que las finalidades o Trabajos Públicos de 2025 y 2026. En las fichas, la vista completa y la exportación se identifican por concepto y fuente. La serie de variaciones conserva solo los períodos comparables.

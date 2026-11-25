@@ -105,3 +105,51 @@ select{min-height:44px;border:1px solid var(--border);border-radius:11px;padding
 .method{margin-top:12px}
 @media(max-width:720px){.top{height:69px}.layout,.hero{grid-template-columns:1fr;gap:15px}.layout{margin-top:16px}main{padding-top:24px}.lead{border-radius:19px}.home-data{order:2}.topic-list{grid-template-columns:1fr}.topic:first-child{grid-column:auto}.topic,.topic:first-child{min-height:75px}.topic .glyph{width:38px;height:38px}.bar-row{grid-template-columns:41px minmax(0,1fr) auto}.responsive-hide{display:none}#filters{margin:auto 0 0;width:100%;max-width:none;border-radius:26px 26px 0 0;padding-bottom:calc(18px + env(safe-area-inset-bottom))}}
 @media(prefers-reduced-motion:no-preference){button{transition:filter .15s,background-color .15s}}
+
+.top-actions,.money-controls{display:flex;flex-wrap:wrap;align-items:center;gap:9px}
+.top-actions{gap:18px}
+.base-picker{display:inline-flex;align-items:center;gap:6px;font-size:.85rem}
+.base-picker select{width:auto;min-height:38px}
+#filters .base-picker{padding-top:5px}
+.year-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:10px}
+.year-card{display:grid;align-content:start;gap:8px;border:1px solid var(--border);padding:12px;border-radius:13px;min-width:0}
+.year-card strong{font-size:clamp(1rem,2.5vw,1.5rem);letter-spacing:-.03em}
+.year-tag{color:var(--cream);font-weight:800;font-size:.86rem}
+.year-card .track{height:7px}
+.year-card:nth-child(2) .fill{background:var(--orange)}
+.year-card:nth-child(3) .fill{background:var(--cream)}
+.change,.overview-table td small{display:block}
+.change{font-weight:750;color:var(--aqua)}
+.overview-table td a{font-size:.82rem}
+.overview-table td{width:23%}
+.overview-item+.overview-item{border-top:1px solid var(--border);margin-top:5px;padding-top:5px}
+.overview-detail .note,.project-comparison{margin-top:9px}
+.overview-table .text-button{min-height:32px;font-size:.8rem}
+.trend{background:var(--ink);border:1px solid var(--border);border-radius:15px;padding:12px;margin:8px 0}
+.trend-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.trend-head div{display:grid;gap:3px}
+.trend-head strong{font-size:clamp(1.2rem,3.2vw,2rem);font-variant-numeric:tabular-nums;letter-spacing:-.04em}
+.series-chart{display:block;width:min(100%,690px);margin:auto}
+.series-chart text{fill:var(--muted);font-size:9px}
+.series-chart .gridline{stroke:var(--border);stroke-width:.6}
+.series-stroke{stroke:var(--aqua);stroke-width:2.3;fill:none;stroke-linejoin:round}
+.series-chart circle{fill:var(--cream);stroke:var(--ink);stroke-width:1}
+@media(max-width:420px){
+ .top-actions{gap:10px}
+ .top-actions .round{width:38px;height:38px}
+ .year-overview{gap:4px}
+ .year-card{padding:7px 5px}
+ .year-card strong{font-size:clamp(.73rem,3.05vw,.95rem)}
+ .year-tag,.year-card small{font-size:.7rem}
+}
+@media(max-width:540px){
+ .overview-table,.overview-table thead,.overview-table tbody{display:block}
+ .overview-table tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+ .overview-table thead th:first-child,.overview-table tbody th{grid-column:1/-1}
+ .overview-table td{width:auto;padding:4px 2px 9px;border-top:0;font-size:.8rem;min-width:0}
+ .overview-table thead th{padding:5px 2px}
+ .overview-table tbody th{padding:7px 0 1px}
+ .overview-table .change,.overview-table td small{font-size:.72rem}
+ .overview-table .overview-item a{font-size:.71rem}
+ .overview-table td a{display:inline-block}
+}

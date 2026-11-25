@@ -24,7 +24,12 @@ const glyphs = {
 const icon = name=>`<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${glyphs[name]}</svg>`;
 const url = address=>/^https:\/\//i.test(address??'')?safe(address):'';
 const sourceLink = (address,label='Fuente original')=>url(address)?`<a href="${url(address)}" rel="noopener noreferrer" target="_blank">${safe(label)}</a>`:'';
-const moneyUnits = state=>state.unit==='real'?'Millones de pesos promedio de 2025 · IPC NOA (INDEC)':'Millones de pesos corrientes';
+const moneyUnits = state=>state.unit==='real'?`Millones de pesos promedio de ${state.baseYear} · IPC NOA (INDEC)`:'Millones de pesos corrientes';
+const baseNote = state=>state.unit==='real' && state.baseYear!==2025
+  ? '<small class="muted">El promedio de la base seleccionada incluye IPC proyectado.</small>' : '';
+const basePicker = (state,attribute='id="base-year"')=>state.unit==='real'
+  ? `<label class="base-picker">Año base <select ${attribute}>${years.map(year=>`<option value="${year}" ${state.baseYear===year?'selected':''}>${year}</option>`).join('')}</select></label>` : '';
+const moneyControls = state=>`<div class="money-controls">${unitButtons(state.unit,'unit')}${basePicker(state)}</div>`;
 const indicatorKeys = [...new Set(data.indicators.map(r=>r.indicador))];
 let state = parseState(location.hash);
 let draft;
@@ -42,12 +47,13 @@ const rangeText = state=>state.measure==='initial'?'Anual · crédito inicial o 
 
 function home(){
   const row = compareRows(data,{...state,topic:'total',selected:[state.year],measure:'initial'})[0];
-  return `<div class="hero"><div><h1>Presupuesto<br>Jujuy</h1><p class="sub">Presupuesto provincial · 2025, 2026 y 2027</p></div><div class="controls">${yearButtons([state.year],'year')}${unitButtons(state.unit,'unit')}</div></div>
+  return `<div class="hero"><div><h1>Presupuesto<br>Jujuy</h1><p class="sub">Presupuesto provincial · 2025, 2026 y 2027</p></div><div class="controls">${yearButtons([state.year],'year')}${moneyControls(state)}</div></div>
    <div class="layout"><article class="lead home-data"><small class="muted">${state.year} · ${safe(row.status)}</small><h2>Gasto total</h2><strong class="price">${millions(row.value)}</strong><small class="muted">${moneyUnits(state)}</small>
+   ${baseNote(state)}
    ${row.inflation?`<small class="muted">${safe(row.inflation)}</small>`:''}
-   ${state.year===2027?'<p class="note">El proyecto tiene cifras agregadas. Los anexos por tema y la ejecución están pendientes en esta base.</p>':''}
+   ${state.year===2027?'<p class="note">Las fichas incluyen importes del proyecto y aclaran qué mide cada anexo.</p>':''}
    <div class="actions"><button class="primary" type="button" data-filter="total">Comparar gasto total</button>${sourceLink(row.source)}</div></article>
-   <section><h2 class="section-title">Explorar por tema</h2><div class="topic-list">${Object.entries(topics).filter(([key])=>key!=='total').map(([key,t])=>
+   <section><h2 class="section-title">Explorar por tema</h2><div class="topic-list">${Object.entries(topics).filter(([key,t])=>key!=='total'&&!t.overviewOnly).map(([key,t])=>
    `<button type="button" class="topic ${t.color}" data-topic="${key}"><strong>${t.name}</strong><span class="glyph">${icon(t.icon)}</span></button>`).join('')}</div>
    <button type="button" class="text-button" data-tab="indicadores">Ver indicadores sociales de Jujuy</button></section></div>`;
 }
@@ -55,20 +61,23 @@ function home(){
 function topicView(){
   const topic = topics[state.topic];
   const layers = [['presupuesto','Presupuesto','rust','total'],['ejecucion','Ejecución','orange','chart'],['anuncios','Anuncios','aqua','announce']];
+  const project = projectRows(data,state);
   const content = {
-    presupuesto:()=>valueRow('Crédito inicial / proyecto',currentRow('initial','annual'))+
-      valueRow('Crédito vigente al cierre',currentRow('currentCredit','annual')),
-    ejecucion:()=>valueRow('Devengado · enero a junio',currentRow('accrued','semester'))+
+    presupuesto:()=>project.length
+      ? project.map(row=>valueRow(row.label,{...row,scope:row.reference})+`<p class="note">${safe(row.scope)}</p>`).join('')
+      : valueRow('Crédito inicial / proyecto',currentRow('initial','annual'))+
+        valueRow('Crédito vigente al cierre',currentRow('currentCredit','annual')),
+    ejecucion:()=>state.year===2027?'<p class="note">Sin ejecución publicada para 2027.</p>':valueRow('Devengado · enero a junio',currentRow('accrued','semester'))+
       valueRow('Devengado · cierre anual',currentRow('accrued','annual'))+
       '<p class="note">El pagado y la ejecución como porcentaje del crédito vigente al mismo corte requieren un cuadro compatible para esta partida.</p>',
     anuncios:()=>state.topic==='obras' && state.year===2026?data.claims.map(claim=>`<article class="data-row"><small class="muted">${safe(claim.date)}</small><h3>${safe(claim.title)}</h3><p>${safe(claim.body)}</p>${sourceLink(claim.url,'Comunicado oficial')}</article>`).join(''):'<p class="note">Sin anuncios incorporados para este tema y año.</p>'
   };
   return `<button class="back" type="button" data-tab="inicio">Volver a Inicio</button>
-   <div class="hero"><div><h1>${topic.name}</h1><p class="sub">Presupuesto provincial · ${state.year}</p></div><div class="controls">${yearButtons([state.year],'year')}${unitButtons(state.unit,'unit')}</div></div>
+   <div class="hero"><div><h1>${topic.name}</h1><p class="sub">Presupuesto provincial · ${state.year}</p></div><div class="controls">${yearButtons([state.year],'year')}${moneyControls(state)}</div></div>
    <div class="layout"><div><div class="layers">${layers.map(([key,label,color,g])=>`<button type="button" class="layer ${color}" data-panel="${key}" aria-pressed="${state.panel===key}">${label}<span class="glyph">${icon(g)}</span></button>`).join('')}</div>
    <div class="actions"><button type="button" class="primary" data-filter="${state.topic}">Comparar este tema</button><button type="button" class="secondary" data-tab="fuentes">Ver fuentes</button></div></div>
    <section class="lead detail" aria-label="Detalle"><h2>${layers.find(([key])=>key===state.panel)[1]}</h2><small class="muted">${moneyUnits(state)}</small>
-   ${content[state.panel]()}
+   ${baseNote(state)}${content[state.panel]()}
    ${topic.differentScope?'<p class="note">Bienestar Social en la ley y Promoción y Asistencia Social en ejecución tienen alcances distintos.</p>':''}</section></div>`;
 }
 
@@ -78,10 +87,11 @@ function compare(){
   const filled = rows.filter(r=>Number.isFinite(r.value));
   const maximum = Math.max(1,...filled.map(r=>r.value));
   return `<div class="compare-head"><h1>${topic.name}</h1><p class="sub">${measures[state.measure]} · ${rangeText(state)}</p>
-  <div class="actions">${unitButtons(state.unit,'unit')}<button class="secondary" type="button" data-filter="${state.topic}">Editar comparación</button></div></div>
-  <div class="results"><article class="lead"><h2>Montos por año</h2><p class="muted">${moneyUnits(state)}</p>
+  <div class="actions">${moneyControls(state)}<button class="secondary" type="button" data-filter="${state.topic}">Editar comparación</button></div></div>
+  <div class="results"><article class="lead"><h2>Montos por año</h2><p class="muted">${moneyUnits(state)}</p>${baseNote(state)}
   <div class="bars" role="list">${rows.map(r=>`<div class="bar-row" role="listitem"><strong>${r.year}</strong>
   ${Number.isFinite(r.value)?`<div class="track" aria-hidden="true"><div class="fill" style="width:${Math.max(0,r.value/maximum)*100}%"></div></div><span class="price">${millions(r.value)}</span>`:`<span class="muted">${safe(r.status)}</span><span aria-hidden="true">—</span>`}</div>`).join('')}</div>
+  ${rows.some(row=>row.detail?.length)?`<div class="project-comparison"><h3>2027 · Importes del proyecto</h3>${rows.flatMap(row=>row.detail??[]).map(row=>valueRow(row.label,{...row,scope:row.reference})).join('')}<p class="note">Los conceptos tienen otro alcance. Se muestran sin variación interanual.</p></div>`:''}
   ${filled.length<2?'<p class="note">Hacen falta dos montos del mismo indicador y corte para calcular una variación.</p>':''}</article>
   <section class="lead"><div class="actions"><h2>Desglose</h2><button type="button" class="secondary" data-download>Descargar CSV</button><button type="button" class="secondary" data-tab="fuentes">Ver metodología</button></div>
   <div class="table-scroll"><table><thead><tr><th>Año</th><th>Monto</th><th>Variación</th>${state.measure==='initial'?'<th>% del gasto</th>':''}<th>Estado y fuente</th></tr></thead><tbody>
@@ -100,38 +110,106 @@ function sources(){
     state.year!==2027&&['Hacienda · ejecución I.1',exec[`fuente_${state.year}`],'Devengado agregado · enero a junio'],
     state.year!==2027&&['Hacienda · ejecución I.3',functionExec[`fuente_${state.year}`],'Por finalidad, función y objeto · enero a junio'],
     state.year===2025&&['Cuenta de Inversión 2025',data.closing[0].fuente,'Cierre anual · cuadro 20'],
+    state.year===2027&&['Proyecto 2027 · Planilla 6',data.projectItems.find(row=>row.topic==='salud').source,'Presupuesto por jurisdicción'],
+    state.year===2027&&['Proyecto 2027 · Planilla 15',data.projectItems.find(row=>row.topic==='obras').source,'Construcciones en bienes de dominio público y privado'],
     ['INDEC · series de IPC','https://www.indec.gob.ar/ftp/cuadros/economia/serie_ipc_divisiones.csv','Nivel general de la región Noroeste y total nacional']].filter(Boolean);
   return `<div class="hero"><div><h1>Fuentes</h1><p class="sub">Documentos y metodología del comparador.</p></div>${yearButtons([state.year],'year')}</div>
   <div class="layout"><section><h2>Documentos de ${state.year}</h2><ul class="source-list">${list.map(([title,link,note])=>`<li>${sourceLink(link,title)}<small>${safe(note)}</small></li>`).join('')}</ul></section>
   <article class="lead detail"><h2>Cómo se comparan los montos</h2>
-  <details open><summary>Ajuste por inflación</summary><p class="muted">Aplicamos el IPC NOA. El monto corriente se multiplica por el IPC medio de 2025 dividido por el IPC medio del período. El ajuste anual usa el escenario central. El acumulado semestral se ajusta con el promedio de ese semestre como aproximación.</p>
+  <details open><summary>Ajuste por inflación</summary><p class="muted">Aplicamos el IPC NOA. El monto corriente se multiplica por el IPC medio del año base elegido dividido por el IPC medio del período. El ajuste anual usa el escenario central. El acumulado semestral se ajusta con el promedio de ese semestre como aproximación.</p>
   <ul class="source-list">${data.deflators.map(d=>`<li>${d.ejercicio} · ${d.meses_observados} meses observados · ${d.meses_proyectados} proyectados</li>`).join('')}</ul><p class="method">${sourceLink('https://www.bcra.gob.ar/archivos/Pdfs/PublicacionesEstadisticas/informes/relevamiento-expectativas-mercado-2026-10.pdf','REM de octubre de 2026')}</p></details>
   <details><summary>Crédito, ejecución y anuncios</summary><p class="muted">El crédito inicial se consulta en la ley o en el proyecto cuando se indica. El crédito vigente incorpora modificaciones. El devengado registra una obligación de pago. Los anuncios se presentan con su fecha y su propio alcance.</p></details>
-  <details><summary>Proyecto y datos pendientes</summary><p class="muted">La base incorpora agregados del proyecto 2027. Una partida sin planilla o corte de ejecución queda sin monto. La variación indica el año anterior seleccionado que se tomó como base. Las celdas sin dato quedan vacías en la descarga.</p></details></article></div>`;
+  <details><summary>Proyecto y datos pendientes</summary><p class="muted">La base incorpora agregados, jurisdicciones y construcciones del proyecto 2027. Las cifras con distinto alcance se muestran con su fuente y sin variación interanual. La ejecución requiere un corte publicado. La variación indica el año anterior seleccionado que se tomó como base. Las celdas sin dato quedan vacías en la descarga.</p></details></article></div>`;
+}
+
+function fullView(){
+  const annual = {...state,selected:years,measure:'initial',cut:'annual'};
+  const totals = variations(compareRows(data,{...annual,topic:'total'}));
+  const maximum = Math.max(...totals.map(row=>row.value));
+  const keys = ['total','corriente','capital','obras','salud','educacion','social','seguridad'];
+  const rows = keys.map(topic=>({topic,values:variations(compareRows(data,{...annual,topic}))}));
+  const cell = row=>row.detail?.length
+    ? row.detail.map(item=>`<div class="overview-item"><strong class="price">${millions(item.value)}</strong><small>${safe(item.label)}</small>${sourceLink(item.source,'Fuente')}</div>`).join('')
+    : Number.isFinite(row.value)?`<strong class="price">${millions(row.value)}</strong>${row.pct===null?'':`<small class="change">${pctFormat.format(row.pct)}% vs. ${row.priorYear}</small>`}${sourceLink(row.source,'Fuente')}`
+    : safe(row.status);
+  return `<div class="hero"><div><h1>Vista completa</h1><p class="sub">Presupuesto provincial · ejercicio completo</p></div>${moneyControls(state)}</div>
+  <div class="results">
+    <section class="lead"><h2>Gasto total previsto</h2><p class="muted">${moneyUnits(state)}</p>${baseNote(state)}
+      <div class="year-overview">${totals.map(row=>`<article class="year-card"><span class="year-tag">${row.year} · ${row.year===2027?'Proyecto':'Ley'}</span>
+      <strong class="price">${millions(row.value)}</strong>
+      <div class="track" aria-hidden="true"><div class="fill" style="width:${row.value/maximum*100}%"></div></div>
+      ${row.pct===null?'':`<small class="change">${pctFormat.format(row.pct)}% vs. ${row.priorYear}</small>`}
+      ${row.inflation?`<small class="muted">${safe(row.inflation)}</small>`:''}</article>`).join('')}</div>
+    </section>
+    <section class="lead overview-detail"><h2>Agregados y sectores</h2><p class="muted">${moneyUnits(state)}</p>
+      <p class="note">El proyecto 2027 usa otras aperturas para algunos temas. Esos importes se identifican por concepto y se muestran sin variación.</p>
+      <div class="table-scroll"><table class="overview-table"><thead><tr><th scope="col">Concepto</th><th scope="col">2025 · Ley</th><th scope="col">2026 · Ley</th><th scope="col">2027 · Proyecto</th></tr></thead>
+      <tbody>${rows.map(({topic,values})=>`<tr><th scope="row">${topics[topic].name}${topics[topic].color&&topic!=='total'?`<br><button type="button" class="text-button" data-topic="${topic}">Abrir ficha</button>`:''}</th>${values.map(row=>`<td>${cell(row)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+    </section>
+    <div class="actions"><button type="button" class="secondary" data-tab="indicadores">Ver indicadores sociales</button><button type="button" class="text-button" data-tab="fuentes">Fuentes y metodología</button></div>
+  </div>`;
+}
+
+function periodLabel(period){
+  const [year,part] = period.split('-');
+  if(!part) return year;
+  if(part.startsWith('S')) return `${part.slice(1)}.º semestre ${year}`;
+  return new Intl.DateTimeFormat('es-AR',{month:'short',year:'numeric',timeZone:'UTC'}).format(new Date(`${period}-01T00:00:00Z`));
+}
+function trend(series){
+  const rows = series.chart;
+  if(!rows.length) return '';
+  const first=rows[0],last=rows.at(-1);
+  const difference = last.valor-first.valor;
+  const change=series.label==='%'?`${pctFormat.format(difference)} p.p.`:first.valor===0?null:`${pctFormat.format(difference/first.valor*100)}%`;
+  const low = Math.min(...rows.map(row=>row.valor));
+  const high = Math.max(...rows.map(row=>row.valor));
+  const padding = (high-low)*.14 || Math.max(Math.abs(high)*.07,1);
+  const bottom = Math.max(0,low-padding);
+  const top = high+padding;
+  const time = period => {
+    const [year,cut] = period.split('-');
+    const withinYear = cut?.startsWith('S')?Number(cut.slice(1))*6:Number(cut??0);
+    return Number(year)*12+withinYear;
+  };
+  const duration = time(last.periodo)-time(first.periodo) || 1;
+  const points = rows.map(row=>[75+284*(time(row.periodo)-time(first.periodo))/duration,154-(row.valor-bottom)/(top-bottom)*127]);
+  const ticks=[top,(top+bottom)/2,bottom];
+  return `<section class="trend" aria-label="Evolución del indicador">
+   <div class="trend-head"><div><small class="muted">Último dato · ${periodLabel(last.periodo)}</small><strong>${num(last.valor)}${series.label==='%'?'%':''}</strong><small class="muted">${safe(series.label)}</small></div>
+   ${rows.length>1&&change!==null?`<div><small class="muted">Cambio en el tramo</small><strong>${change}</strong><small class="muted">Desde ${periodLabel(first.periodo)}</small></div>`:''}</div>
+   ${rows.length>1?`<svg class="series-chart" viewBox="0 0 380 184" role="img" aria-label="Desde ${periodLabel(first.periodo)} hasta ${periodLabel(last.periodo)}. Cambio de la serie en ${safe(series.label)}.">
+   ${ticks.map((tick,i)=>`<line x1="75" x2="359" y1="${27+i*63.5}" y2="${27+i*63.5}" class="gridline"/><text x="69" y="${30+i*63.5}" text-anchor="end">${num(tick)}</text>`).join('')}
+   <polyline points="${points.map(p=>p.join(',')).join(' ')}" class="series-stroke"/>
+   ${points.map(([x,y],i)=>`<circle cx="${x}" cy="${y}" r="3.6"><title>${periodLabel(rows[i].periodo)} · ${num(rows[i].valor)}</title></circle>`).join('')}
+   <text x="75" y="176">${periodLabel(first.periodo)}</text><text x="359" y="176" text-anchor="end">${periodLabel(last.periodo)}</text></svg>`:''}</section>`;
 }
 
 function indicators(){
   const indicator = indicatorKeys.includes(state.social) ? state.social : 'Incidencia de pobreza en personas';
-  const rows = data.indicators.filter(r=>r.indicador===indicator && r.periodo.startsWith(String(state.year))).reverse();
+  const series = indicatorRows(data,state,indicator);
+  const rows = [...series.rows].reverse();
   return `<button class="back" type="button" data-tab="inicio">Volver a Inicio</button><div class="hero"><div><h1>Indicadores sociales</h1><p class="sub">Jujuy · datos observados por fuente y cobertura</p></div>${yearButtons([state.year],'year')}</div>
-  <div class="results"><article class="lead"><label class="select-label">Indicador<select id="indicator">${indicatorKeys.map(name=>`<option ${name===indicator?'selected':''}>${safe(name)}</option>`).join('')}</select></label>
-  ${rows.length?`<div class="table-scroll"><table><thead><tr><th>Período</th><th>Valor</th><th>Cobertura y fuente</th></tr></thead><tbody>${rows.map(r=>`<tr><th scope="row">${safe(r.periodo)}</th><td>${num(r.valor)} ${safe(r.unidad)}</td><td>${safe(r.cobertura)}<br>${sourceLink(r.fuente,'Abrir fuente')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="note">Sin observaciones incorporadas para este indicador y año.</p>'}</article></div>`;
+  <div class="results"><article class="lead">
+  <label class="select-label">Indicador<select id="indicator">${indicatorKeys.map(name=>`<option ${name===indicator?'selected':''}>${safe(name)}</option>`).join('')}</select></label>
+  ${series.monetary?moneyControls(state)+baseNote(state):''}
+  ${rows.length?`${trend(series)}<div class="table-scroll"><table><thead><tr><th>Período</th><th>Valor · ${safe(series.label)}</th><th>Cobertura y fuente</th></tr></thead><tbody>${rows.map(r=>`<tr><th scope="row">${periodLabel(r.periodo)}</th><td>${num(r.valor)}${series.label==='%'?'%':''}</td><td>${safe(r.cobertura)}<br>${sourceLink(r.fuente,'Abrir fuente')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="note">Sin observaciones incorporadas para este indicador y año.</p>'}</article></div>`;
 }
 
-const views = {inicio:home,tema:topicView,comparar:compare,fuentes:sources,indicadores:indicators};
+const views = {inicio:home,tema:topicView,completa:fullView,comparar:compare,fuentes:sources,indicadores:indicators};
 function render(focus = false){
   const localId = document.activeElement?.id;
   const dataAttrs = {...document.activeElement?.dataset};
   main.innerHTML = views[state.tab]();
   const tab = ['tema','indicadores'].includes(state.tab)?'inicio':state.tab;
-  nav.innerHTML = [['inicio','Inicio','home'],['comparar','Comparar','chart'],['fuentes','Fuentes','files']].map(([key,text,g])=>
+  nav.innerHTML = [['inicio','Inicio','home'],['completa','Vista completa','overview'],['comparar','Comparar','chart']].map(([key,text,g])=>
     `<button class="nav-item" type="button" data-nav="${key}" ${key===tab?'aria-current="page"':''}>${icon(g)}${text}</button>`).join('');
   if(focus){
     const heading = main.querySelector('h1');
     heading.tabIndex = -1;
     heading.focus({preventScroll:true});
     window.scrollTo(0,0);
-  } else if(localId==='indicator') document.querySelector('#indicator')?.focus({preventScroll:true});
+  } else if(['indicator','base-year'].includes(localId)) document.getElementById(localId)?.focus({preventScroll:true});
   else if(Object.keys(dataAttrs).length) {
     const target = [...main.querySelectorAll('button')].find(button=>Object.entries(dataAttrs).every(([key,value])=>button.dataset[key]===value));
     target?.focus({preventScroll:true});
@@ -145,7 +223,7 @@ function update(delta,{push=false,focus=false}={}){
 }
 
 function openFilters(topic){
-  draft = {...state,topic,selected:[...state.selected]};
+  draft = {...state,topic,selected:[...(state.tab==='completa'?years:state.selected)]};
   drawFilters();
   dialog.showModal();
   dialog.querySelector('#topic-select').focus();
@@ -158,8 +236,8 @@ function drawFilters(focusSelector){
   <fieldset><legend>Años · elegí al menos dos</legend>${yearButtons(draft.selected,'draft-year')}</fieldset>
   <div class="filters-grid"><label>Indicador<select data-draft="measure">${options(Object.entries(measures),draft.measure)}</select></label>
   <label>Período<select data-draft="cut" ${draft.measure!=='accrued'?'disabled':''}>${options([['semester','Enero a junio'],['annual','Anual']],draft.measure==='accrued'?draft.cut:'annual')}</select></label></div>
-  <fieldset><legend>Valores</legend>${unitButtons(draft.unit,'draft-unit')}</fieldset>
-  <p class="hint">2027 se muestra con el estado de cada dato disponible.</p>
+  <fieldset><legend>Valores</legend>${unitButtons(draft.unit,'draft-unit')}${basePicker(draft,'data-draft="baseYear"')}</fieldset>
+  <p class="hint">2027 figura como proyecto. La ejecución se muestra cuando hay un corte publicado.</p>
   <p role="alert" id="filter-message"></p><button class="primary" type="submit">Ver comparación</button></form>`;
   if(focusSelector) dialog.querySelector(focusSelector)?.focus();
 }
@@ -208,6 +286,7 @@ document.addEventListener('click',event=>{
   if(b.unit) update({unit:b.unit});
   if(b.panel) update({panel:b.panel});
   if('download' in b) download();
+  if('sources' in b) update({tab:'fuentes'},{push:true,focus:true});
   if('close' in b) dialog.close();
   if(b.draftYear){
     const y=Number(b.draftYear);
@@ -217,19 +296,20 @@ document.addEventListener('click',event=>{
   }
   if(b.draftUnit){
     draft.unit=b.draftUnit;
-    dialog.querySelectorAll('[data-draft-unit]').forEach(control=>control.setAttribute('aria-pressed',String(control.dataset.draftUnit===draft.unit)));
+    drawFilters(`[data-draft-unit="${draft.unit}"]`);
   }
 });
 document.addEventListener('change',event=>{
   const field=event.target.dataset.draft;
   if(field){
-    draft[field]=event.target.value;
+    draft[field]=field==='baseYear'?Number(event.target.value):event.target.value;
     if(field==='measure'){
       if(draft.measure==='currentCredit') draft.cut='annual';
       if(draft.measure==='accrued') draft.cut='semester';
       drawFilters('[data-draft="measure"]');
     }
   }
+  if(event.target.id==='base-year') update({baseYear:Number(event.target.value)});
   if(event.target.id==='indicator') update({social:event.target.value});
 });
 dialog.addEventListener('submit',event=>{
