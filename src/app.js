@@ -5,8 +5,10 @@ const dialog = document.querySelector('#filters');
 const status = document.querySelector('#toast');
 const format = new Intl.NumberFormat('es-AR',{maximumFractionDigits:1});
 const pctFormat = new Intl.NumberFormat('es-AR',{maximumFractionDigits:2,signDisplay:'exceptZero'});
+const shareFormat = new Intl.NumberFormat('es-AR',{maximumFractionDigits:2});
 const num = n=>format.format(n);
 const millions = n=>'$'+num(n/1e6);
+const percent = n=>n>0&&n<.01?'<0,01%':shareFormat.format(n)+'%';
 const safe = value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const glyphs = {
  home:'<path d="m3 11 9-8 9 8v9H3z M9 20v-6h6v6"/>', chart:'<path d="M4 20v-6m5 6V9m5 11V5m5 15V3"/>',
@@ -31,7 +33,21 @@ const basePicker = (state,attribute='id="base-year"')=>state.unit==='real'
   ? `<label class="base-picker">Año base <select ${attribute}>${years.map(year=>`<option value="${year}" ${state.baseYear===year?'selected':''}>${year}</option>`).join('')}</select></label>` : '';
 const moneyControls = state=>`<div class="money-controls">${unitButtons(state.unit,'unit')}${basePicker(state)}</div>`;
 const indicatorKeys = [...new Set(data.indicators.map(r=>r.indicador))];
-let state = parseState(location.hash);
+const catalog = topicCatalog(data);
+const functionalKeys = ['administracion','seguridad','salud','social','educacion','ciencia','economia','deuda-funcion','sin-clasificar'];
+const budgetGroups = {
+  finalidades: {name:'Gasto por finalidad · 2025 y 2026', note:'Agrupa el gasto según el servicio que se quiere prestar. Abrí una finalidad para ver sus funciones.'},
+  'finalidades-2027': {name:'Gasto por finalidad · proyecto 2027', note:'La Planilla 5 usa otras categorías. Los importes se obtienen sumando sus columnas institucionales. El cuadro queda $4 millones por debajo del total del artículo 1.'},
+  jurisdicciones: {name:'Gasto por jurisdicción · proyecto 2027', note:'La Planilla 6 muestra cuánto se prevé asignar a cada organismo. Abrí una jurisdicción para ver su gasto corriente y de capital.'},
+  financieras: {name:'Aplicaciones financieras', note:'La amortización del capital de la deuda se informa fuera del gasto total. Los intereses sí integran el gasto corriente.'}
+};
+const budgetTree = {
+  recursos:['ingresos-corrientes','ingresos-capital'], total:['corriente','capital'],
+  'inversion-real':['obras'], finalidades:functionalKeys, financieras:['amortizacion']
+};
+for(const row of data.budgetDetails) (budgetTree[row.parent]??=[]).push(row.id);
+const openedBudgetNodes = new Set(['recursos','total','saldo']);
+let state = parseState(location.hash,catalog);
 let draft;
 let toastTimer;
 
@@ -81,22 +97,104 @@ function topicView(){
    ${topic.differentScope?'<p class="note">Bienestar Social en la ley y Promoción y Asistencia Social en ejecución tienen alcances distintos.</p>':''}</section></div>`;
 }
 
+function topicOptions(topic){
+  const groups = [
+    ['Resumen',['total','recursos','saldo','corriente','capital','ingresos-corrientes','ingresos-capital','amortizacion']],
+    ['Rubros de ingresos',data.budgetDetails.filter(row=>row.basis==='recursos').map(row=>row.id)],
+    ['Rubros de gasto',['obras',...data.budgetDetails.filter(row=>row.basis==='total'&&row.parent!=='finalidades-2027'&&!/^(func|jur)-/.test(row.id)).map(row=>row.id)]],
+    ['Componentes del resultado',['saldo-corriente','saldo-capital']],
+    ['Finalidades y funciones · 2025 y 2026',[...functionalKeys,...data.budgetDetails.filter(row=>row.id.startsWith('func-')).map(row=>row.id)]],
+    ['Finalidades · proyecto 2027',budgetTree['finalidades-2027']],
+    ['Jurisdicciones e importes por tipo de gasto · proyecto 2027',data.budgetDetails.filter(row=>row.id.startsWith('jur-')).map(row=>row.id)]
+  ];
+  return groups.map(([label,keys])=>`<optgroup label="${label}">${keys.map(key=>
+    `<option value="${key}" ${topic===key?'selected':''}>${safe(catalog[key].name)}</option>`).join('')}</optgroup>`).join('');
+}
+
+function budgetTrend(rows){
+  const values = rows.filter(row=>Number.isFinite(row.value));
+  if(!values.length) return '';
+  const low = Math.min(0,...values.map(row=>row.value));
+  const high = Math.max(0,...values.map(row=>row.value));
+  const divisor = high-low || 1;
+  const bottom = low===high?164:172;
+  const chartX = i=>123+(rows.length===1?.5:i/(rows.length-1))*392;
+  const chartY = value=>bottom-(value-low)/divisor*145;
+  const ticks = high===low?[0]:[high,(high+low)/2,low];
+  const lines = rows.map((row,i)=>{
+    const next = rows[i+1];
+    if(!Number.isFinite(row.value)||!Number.isFinite(next?.value)) return '';
+    return `<line x1="${chartX(i)}" y1="${chartY(row.value)}" x2="${chartX(i+1)}" y2="${chartY(next.value)}" class="budget-line ${next.year===2027?'projected':''}"/>`;
+  }).join('');
+  return `<svg class="budget-chart" viewBox="0 0 550 206" role="img" aria-label="${safe(values.map(row=>row.year+' · '+millions(row.value)+' millones').join('; '))}">
+  ${ticks.map(tick=>`<line x1="121" x2="521" y1="${chartY(tick)}" y2="${chartY(tick)}" class="gridline"/>
+  <text x="112" y="${chartY(tick)+4}" text-anchor="end">${num(tick/1e6)}</text>`).join('')}
+  ${low<0&&high>0?`<line x1="121" x2="521" y1="${chartY(0)}" y2="${chartY(0)}" class="zero-line"/>`:''}
+  ${lines}${rows.map((row,i)=>`<text x="${chartX(i)}" y="197" text-anchor="middle">${row.year}</text>${Number.isFinite(row.value)?
+    `<circle cx="${chartX(i)}" cy="${chartY(row.value)}" r="5.5" class="budget-dot ${row.year===2027?'projected':''}"><title>${row.year} · ${millions(row.value)} millones</title></circle>`:''}`).join('')}</svg>`;
+}
+
+function budgetPie(share,label,denominator){
+  const portion = share>0&&share<.01?'Menos de $0,01':`$${shareFormat.format(share)}`;
+  return `<div class="share-item"><div class="budget-pie" aria-hidden="true">
+    <svg viewBox="0 0 80 80"><circle class="pie-rest" cx="40" cy="40" r="32"></circle>
+    ${share>0?`<circle class="pie-part" cx="40" cy="40" r="32" pathLength="100" stroke-dasharray="${share} 100" transform="rotate(-90 40 40)"></circle>`:''}</svg>
+    <span>${safe(percent(share))}</span></div>
+    <p>${label?`<b>${safe(label)}</b><br>`:''}${portion} de cada $100 <span class="muted">${denominator}</span></p></div>`;
+}
+
+function sharePanel(rows,topic){
+  const basis = participationBasis(topic);
+  if(!basis) return '';
+  const denominator = basis==='recursos'?'de los ingresos previstos':
+    state.measure==='accrued'?'del gasto devengado':state.measure==='currentCredit'?'del crédito vigente':'del gasto previsto';
+  const worksProject = state.topic==='obras' && state.measure==='initial' && rows.some(row=>row.year===2027);
+  const construction = worksProject && compareRows(data,{...state,topic:'construcciones',selected:[2027]})[0];
+  return `<section class="lead share-panel" aria-label="Participación en el presupuesto"><h2>¿Cuánto representa?</h2>
+    <p class="muted">La torta completa representa el total de cada año. El color muestra la parte elegida.</p>
+    ${rows.map(row=>{
+      const separate = row.detail?.filter(item=>Number.isFinite(item.share))??[];
+      const pies = Number.isFinite(row.share)?budgetPie(row.share,'',denominator):
+        separate.length?separate.map(item=>budgetPie(item.share,item.label,denominator)).join('')+'<small class="muted">Presupuesto por ministerio · distinto alcance.</small>':
+        construction&&row.year===2027?budgetPie(construction.share,'Construcciones · Planilla 1',denominator)+
+          '<small class="muted">La torta usa el cuadro por naturaleza del gasto. La Planilla 15 se muestra aparte.</small>':
+        `<p class="muted">${safe(row.status==='Sin dato'?'Participación sin dato':row.status)}</p>`;
+      return `<article class="share-year"><h3>${row.year} <span class="muted">${row.year===2027&&state.measure==='initial'?'Proyecto':''}</span></h3>${pies}</article>`;
+    }).join('')}</section>`;
+}
+
 function compare(){
-  const topic = topics[state.topic];
+  const topic = catalog[state.topic];
   const rows = variations(compareRows(data,state));
-  const filled = rows.filter(r=>Number.isFinite(r.value));
-  const maximum = Math.max(1,...filled.map(r=>r.value));
-  return `<div class="compare-head"><h1>${topic.name}</h1><p class="sub">${measures[state.measure]} · ${rangeText(state)}</p>
-  <div class="actions">${moneyControls(state)}<button class="secondary" type="button" data-filter="${state.topic}">Editar comparación</button></div></div>
-  <div class="results"><article class="lead"><h2>Montos por año</h2><p class="muted">${moneyUnits(state)}</p>${baseNote(state)}
-  <div class="bars" role="list">${rows.map(r=>`<div class="bar-row" role="listitem"><strong>${r.year}</strong>
-  ${Number.isFinite(r.value)?`<div class="track" aria-hidden="true"><div class="fill" style="width:${Math.max(0,r.value/maximum)*100}%"></div></div><span class="price">${millions(r.value)}</span>`:`<span class="muted">${safe(r.status)}</span><span aria-hidden="true">—</span>`}</div>`).join('')}</div>
-  ${rows.some(row=>row.detail?.length)?`<div class="project-comparison"><h3>2027 · Importes del proyecto</h3>${rows.flatMap(row=>row.detail??[]).map(row=>valueRow(row.label,{...row,scope:row.reference})).join('')}<p class="note">Los conceptos tienen otro alcance. Se muestran sin variación interanual.</p></div>`:''}
-  ${filled.length<2?'<p class="note">Hacen falta dos montos del mismo indicador y corte para calcular una variación.</p>':''}</article>
+  const filled = rows.filter(row=>Number.isFinite(row.value));
+  const showShares = participationBasis(topic)!==null;
+  const shareHeading = participationBasis(topic)==='recursos'?'% de los recursos':state.measure==='currentCredit'?'% del crédito':'% del gasto';
+  const period = state.measure==='initial'?'Presupuesto anual previsto':`${measures[state.measure]} · ${rangeText(state)}`;
+  return `<div class="compare-head"><h1>${safe(topic.name)}</h1><p class="sub">${period}</p></div>
+  <div class="results"><div class="compare-layout">
+    <article class="lead compare-chart"><h2>Cómo cambia el monto</h2><p class="muted">${moneyUnits(state)}</p>${baseNote(state)}
+      ${budgetTrend(rows)}
+      <div class="compare-years">${rows.map(row=>`<div class="compare-year"><span class="year-tag">${row.year}${row.year===2027&&state.measure==='initial'?' · Proyecto':''}</span>
+        ${Number.isFinite(row.value)?`<strong class="price">${millions(row.value)}</strong>
+        ${row.pct===null?'':`<small class="change">${pctFormat.format(row.pct)}% frente a ${row.priorYear}</small>`}`:
+        `<small class="muted">${row.detail?.length?'Ver importes abajo':safe(row.status)}</small>`}</div>`).join('')}</div>
+      ${topic.note?`<p class="note">${safe(topic.note)}</p>`:''}
+      ${rows.some(row=>row.detail?.length)?`<div class="project-comparison"><h3>2027 · Importes del proyecto</h3>
+        ${rows.flatMap(row=>row.detail??[]).map(row=>valueRow(row.label,{...row,scope:row.reference})).join('')}
+        <p class="note">Estos importes tienen otro alcance. El gráfico de evolución usa la serie comparable.</p></div>`:''}
+      ${filled.length<2?'<p class="note">Hacen falta dos montos del mismo indicador y corte para calcular una variación.</p>':''}
+    </article>
+    <aside class="lead compare-controls" aria-label="Controles de comparación">
+      <label class="select-label" for="compare-topic">Partida o indicador<select id="compare-topic">${topicOptions(state.topic)}</select></label>
+      ${moneyControls(state)}
+      <button class="secondary" type="button" data-filter="${state.topic}">Elegir años e indicador</button>
+    </aside>
+    ${sharePanel(rows,topic)}
+  </div>
   <section class="lead"><div class="actions"><h2>Desglose</h2><button type="button" class="secondary" data-download>Descargar CSV</button><button type="button" class="secondary" data-tab="fuentes">Ver metodología</button></div>
-  <div class="table-scroll"><table><thead><tr><th>Año</th><th>Monto</th><th>Variación</th>${state.measure==='initial'?'<th>% del gasto</th>':''}<th>Estado y fuente</th></tr></thead><tbody>
-  ${rows.map(r=>`<tr><th scope="row">${r.year}</th><td class="price">${Number.isFinite(r.value)?millions(r.value):'—'}</td><td>${r.pct===null?'—':`${pctFormat.format(r.pct)}%<br><small class="muted">vs. ${r.priorYear}</small>`}</td>
-  ${state.measure==='initial'?`<td>${Number.isFinite(r.share)?num(r.share)+'%':'—'}</td>`:''}<td>${safe(r.status)}${r.inflation?`<br><small>${safe(r.inflation)}</small>`:''}${r.source?`<br>${sourceLink(r.source,'Abrir fuente')}`:''}</td></tr>`).join('')}
+  <div class="table-scroll"><table><thead><tr><th>Año</th><th>Monto</th><th>Variación</th>${showShares?`<th>${shareHeading}</th>`:''}<th>Estado y fuente</th></tr></thead><tbody>
+  ${rows.map(row=>`<tr><th scope="row">${row.year}</th><td class="price">${Number.isFinite(row.value)?millions(row.value):'—'}</td><td>${row.pct===null?'—':`${pctFormat.format(row.pct)}%<br><small class="muted">vs. ${row.priorYear}</small>`}</td>
+    ${showShares?`<td>${Number.isFinite(row.share)?safe(percent(row.share)):'—'}</td>`:''}<td>${safe(row.status)}${row.inflation?`<br><small>${safe(row.inflation)}</small>`:''}${row.source?`<br>${sourceLink(row.source,'Abrir fuente')}`:''}</td></tr>`).join('')}
   </tbody></table></div></section></div>`;
 }
 
@@ -106,6 +204,7 @@ function sources(){
   const exec = data.execution.find(r=>r.codigo==='total');
   const functionExec = data.execution.find(r=>r.codigo==='obras');
   const list = [original&&[original.estado_presupuesto==='proyecto'?'Proyecto de Presupuesto':'Ley de Presupuesto',original.fuente,'Crédito inicial · ejercicio completo'],
+    [...data.budgetSources.balance[years.indexOf(state.year)],'Ingresos, gastos y resultado previstos'],
     work&&['Planilla de Trabajos Públicos',work.fuente,work.referencia],
     state.year!==2027&&['Hacienda · ejecución I.1',exec[`fuente_${state.year}`],'Devengado agregado · enero a junio'],
     state.year!==2027&&['Hacienda · ejecución I.3',functionExec[`fuente_${state.year}`],'Por finalidad, función y objeto · enero a junio'],
@@ -119,32 +218,59 @@ function sources(){
   <details open><summary>Ajuste por inflación</summary><p class="muted">Aplicamos el IPC NOA. El monto corriente se multiplica por el IPC medio del año base elegido dividido por el IPC medio del período. El ajuste anual usa el escenario central. El acumulado semestral se ajusta con el promedio de ese semestre como aproximación.</p>
   <ul class="source-list">${data.deflators.map(d=>`<li>${d.ejercicio} · ${d.meses_observados} meses observados · ${d.meses_proyectados} proyectados</li>`).join('')}</ul><p class="method">${sourceLink('https://www.bcra.gob.ar/archivos/Pdfs/PublicacionesEstadisticas/informes/relevamiento-expectativas-mercado-2026-10.pdf','REM de octubre de 2026')}</p></details>
   <details><summary>Crédito, ejecución y anuncios</summary><p class="muted">El crédito inicial se consulta en la ley o en el proyecto cuando se indica. El crédito vigente incorpora modificaciones. El devengado registra una obligación de pago. Los anuncios se presentan con su fecha y su propio alcance.</p></details>
+  <details><summary>Cómo se calcula la participación</summary><p class="muted">Cada partida de gasto se divide por el gasto total previsto o por el total del mismo indicador y corte. Cada recurso se divide por los ingresos totales previstos. Como ambos montos del año usan el mismo factor de precios, el porcentaje se conserva en pesos corrientes y constantes.</p></details>
   <details><summary>Proyecto y datos pendientes</summary><p class="muted">La base incorpora agregados, jurisdicciones y construcciones del proyecto 2027. Las cifras con distinto alcance se muestran con su fuente y sin variación interanual. La ejecución requiere un corte publicado. La variación indica el año anterior seleccionado que se tomó como base. Las celdas sin dato quedan vacías en la descarga.</p></details></article></div>`;
 }
 
 function fullView(){
   const annual = {...state,selected:years,measure:'initial',cut:'annual'};
-  const totals = variations(compareRows(data,{...annual,topic:'total'}));
-  const maximum = Math.max(...totals.map(row=>row.value));
-  const keys = ['total','corriente','capital','obras','salud','educacion','social','seguridad'];
-  const rows = keys.map(topic=>({topic,values:variations(compareRows(data,{...annual,topic}))}));
-  const cell = row=>row.detail?.length
-    ? row.detail.map(item=>`<div class="overview-item"><strong class="price">${millions(item.value)}</strong><small>${safe(item.label)}</small>${sourceLink(item.source,'Fuente')}</div>`).join('')
-    : Number.isFinite(row.value)?`<strong class="price">${millions(row.value)}</strong>${row.pct===null?'':`<small class="change">${pctFormat.format(row.pct)}% vs. ${row.priorYear}</small>`}${sourceLink(row.source,'Fuente')}`
-    : safe(row.status);
-  return `<div class="hero"><div><h1>Vista completa</h1><p class="sub">Presupuesto provincial · ejercicio completo</p></div>${moneyControls(state)}</div>
+  const roots = ['recursos','total','saldo'];
+  const read = key=>compareRows(data,{...annual,topic:key});
+  const [resources,spending,balances] = roots.map(read);
+  const amount = row=>Number.isFinite(row.value)?millions(row.value):row.detail?.length?'Ver proyecto':'—';
+  const resultLabel = value=>value>0?'Superávit previsto':value<0?'Déficit previsto':'Resultado equilibrado';
+
+  function treeRow(key){
+    const group = budgetGroups[key];
+    const topic = group??catalog[key];
+    const rows = group?[]:read(key);
+    const children = budgetTree[key]??[];
+    const sourceRows = rows.flatMap(row=>row.detail?.length
+      ? row.detail.map(item=>({...item,year:row.year}))
+      : row.source?[row]:[]);
+    return `<details class="budget-node" data-budget-node="${key}" ${openedBudgetNodes.has(key)?'open':''}>
+      <summary class="budget-summary ${group?'budget-group':''}"><span class="budget-label"><span class="disclosure" aria-hidden="true"></span>${safe(topic.name)}</span>
+        ${rows.map(row=>`<span class="budget-cell"><span class="budget-cell-year">${row.year}</span><span class="${Number.isFinite(row.value)?'price':'muted'}">
+          ${amount(row)}${Number.isFinite(row.share)?`<small class="muted">${safe(percent(row.share))}</small>`:''}</span></span>`).join('')}</summary>
+      <div class="budget-children">
+        ${topic.note?`<p class="note">${safe(topic.note)}</p>`:''}
+        ${key==='recursos'?'<p class="note">En 2026, el artículo 2 y la Planilla 8 distribuyen $740 de forma distinta entre recursos corrientes y de capital. El total de ingresos coincide.</p>':''}
+        ${rows.some(row=>row.detail?.length)?`<div class="project-detail"><h3>2027 · Importes del proyecto</h3>
+          ${rows.flatMap(row=>row.detail??[]).map(item=>valueRow(item.label,{...item,scope:item.reference})).join('')}
+          <p class="note">Los anexos del proyecto usan otro alcance.</p></div>`:''}
+        ${children.map(treeRow).join('')}
+        ${!group?`<div class="budget-row-actions"><button type="button" class="text-button" data-compare-topic="${key}">Comparar</button>
+          ${sourceRows.map(row=>sourceLink(row.source,row.label?`${row.year} · ${row.label}`:`${row.year} · Fuente`)).join('')}</div>`:''}
+      </div></details>`;
+  }
+
+  return `<div class="hero"><div><h1>Vista completa</h1><p class="sub">Ingresos, gastos y resultado de los tres presupuestos</p></div>${moneyControls(state)}</div>
   <div class="results">
-    <section class="lead"><h2>Gasto total previsto</h2><p class="muted">${moneyUnits(state)}</p>${baseNote(state)}
-      <div class="year-overview">${totals.map(row=>`<article class="year-card"><span class="year-tag">${row.year} · ${row.year===2027?'Proyecto':'Ley'}</span>
-      <strong class="price">${millions(row.value)}</strong>
-      <div class="track" aria-hidden="true"><div class="fill" style="width:${row.value/maximum*100}%"></div></div>
-      ${row.pct===null?'':`<small class="change">${pctFormat.format(row.pct)}% vs. ${row.priorYear}</small>`}
-      ${row.inflation?`<small class="muted">${safe(row.inflation)}</small>`:''}</article>`).join('')}</div>
+    <section class="lead"><h2>Cuánto entra, cuánto se gasta y cuánto queda</h2>
+      <p class="muted">${moneyUnits(state)}</p>${baseNote(state)}
+      <div class="year-overview">${years.map((year,i)=>`<article class="year-card balance-card">
+        <h3 class="year-tag">${year} · ${year===2027?'Proyecto':'Ley'}</h3>
+        <dl><div><dt>Recursos</dt><dd class="price">${amount(resources[i])}</dd></div>
+        <div><dt>Gastos</dt><dd class="price">${amount(spending[i])}</dd></div>
+        <div class="balance-line"><dt>${resultLabel(balances[i].value)}</dt><dd class="price">${amount(balances[i])}</dd></div></dl>
+        ${resources[i].inflation?`<small class="muted">${safe(resources[i].inflation)}</small>`:''}</article>`).join('')}</div>
     </section>
-    <section class="lead overview-detail"><h2>Agregados y sectores</h2><p class="muted">${moneyUnits(state)}</p>
-      <p class="note">El proyecto 2027 usa otras aperturas para algunos temas. Esos importes se identifican por concepto y se muestran sin variación.</p>
-      <div class="table-scroll"><table class="overview-table"><thead><tr><th scope="col">Concepto</th><th scope="col">2025 · Ley</th><th scope="col">2026 · Ley</th><th scope="col">2027 · Proyecto</th></tr></thead>
-      <tbody>${rows.map(({topic,values})=>`<tr><th scope="row">${topics[topic].name}${topics[topic].color&&topic!=='total'?`<br><button type="button" class="text-button" data-topic="${topic}">Abrir ficha</button>`:''}</th>${values.map(row=>`<td>${cell(row)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+    <section class="lead budget-structure"><h2>Abrir el presupuesto por rubro</h2>
+      <p class="muted">Abrí cada fila para ver el detalle y las fuentes. Los porcentajes indican cuánto pesa la partida dentro del total de ingresos o gastos del año.</p>
+      <div class="budget-column-head" aria-hidden="true"><span>Concepto</span>${years.map(year=>`<span>${year} · ${year===2027?'Proyecto':'Ley'}</span>`).join('')}</div>
+      ${roots.map(treeRow).join('')}
+      ${Object.keys(budgetGroups).map(treeRow).join('')}
+      <small class="muted">— indica que el rubro no está identificado en ese desglose. Los importes provienen de la ley y sus anexos o del proyecto.</small>
     </section>
     <div class="actions"><button type="button" class="secondary" data-tab="indicadores">Ver indicadores sociales</button><button type="button" class="text-button" data-tab="fuentes">Fuentes y metodología</button></div>
   </div>`;
@@ -200,6 +326,10 @@ const views = {inicio:home,tema:topicView,completa:fullView,comparar:compare,fue
 function render(focus = false){
   const localId = document.activeElement?.id;
   const dataAttrs = {...document.activeElement?.dataset};
+  for(const node of main.querySelectorAll('[data-budget-node]')){
+    if(node.open) openedBudgetNodes.add(node.dataset.budgetNode);
+    else openedBudgetNodes.delete(node.dataset.budgetNode);
+  }
   main.innerHTML = views[state.tab]();
   const tab = ['tema','indicadores'].includes(state.tab)?'inicio':state.tab;
   nav.innerHTML = [['inicio','Inicio','home'],['completa','Vista completa','overview'],['comparar','Comparar','chart']].map(([key,text,g])=>
@@ -209,7 +339,7 @@ function render(focus = false){
     heading.tabIndex = -1;
     heading.focus({preventScroll:true});
     window.scrollTo(0,0);
-  } else if(['indicator','base-year'].includes(localId)) document.getElementById(localId)?.focus({preventScroll:true});
+  } else if(['indicator','base-year','compare-topic'].includes(localId)) document.getElementById(localId)?.focus({preventScroll:true});
   else if(Object.keys(dataAttrs).length) {
     const target = [...main.querySelectorAll('button')].find(button=>Object.entries(dataAttrs).every(([key,value])=>button.dataset[key]===value));
     target?.focus({preventScroll:true});
@@ -223,7 +353,8 @@ function update(delta,{push=false,focus=false}={}){
 }
 
 function openFilters(topic){
-  draft = {...state,topic,selected:[...(state.tab==='completa'?years:state.selected)]};
+  draft = {...state,topic,measure:catalog[topic].execution?state.measure:'initial',
+    selected:[...(state.tab==='completa'?years:state.selected)]};
   drawFilters();
   dialog.showModal();
   dialog.querySelector('#topic-select').focus();
@@ -232,9 +363,9 @@ function openFilters(topic){
 function drawFilters(focusSelector){
   const options = (entries,active)=>entries.map(([key,label])=>`<option value="${key}" ${key===active?'selected':''}>${label}</option>`).join('');
   dialog.innerHTML = `<form id="filter-form"><header><h2 id="filter-title">Comparar años</h2><button class="round" type="button" data-close aria-label="Cerrar">${icon('close')}</button></header>
-  <label class="select-label">Tema<select id="topic-select" data-draft="topic">${options(Object.entries(topics).map(([key,t])=>[key,t.name]),draft.topic)}</select></label>
+  <label class="select-label">Partida o indicador<select id="topic-select" data-draft="topic">${topicOptions(draft.topic)}</select></label>
   <fieldset><legend>Años · elegí al menos dos</legend>${yearButtons(draft.selected,'draft-year')}</fieldset>
-  <div class="filters-grid"><label>Indicador<select data-draft="measure">${options(Object.entries(measures),draft.measure)}</select></label>
+  <div class="filters-grid"><label>Indicador<select data-draft="measure" ${catalog[draft.topic].execution?'':'disabled'}>${options(Object.entries(measures),draft.measure)}</select></label>
   <label>Período<select data-draft="cut" ${draft.measure!=='accrued'?'disabled':''}>${options([['semester','Enero a junio'],['annual','Anual']],draft.measure==='accrued'?draft.cut:'annual')}</select></label></div>
   <fieldset><legend>Valores</legend>${unitButtons(draft.unit,'draft-unit')}${basePicker(draft,'data-draft="baseYear"')}</fieldset>
   <p class="hint">2027 figura como proyecto. La ejecución se muestra cuando hay un corte publicado.</p>
@@ -243,7 +374,7 @@ function drawFilters(focusSelector){
 }
 
 function download(){
-  const contents = csvRows(variations(compareRows(data,state)),state);
+  const contents = csvRows(variations(compareRows(data,state)),state,catalog);
   const href = URL.createObjectURL(new Blob(['\ufeff',contents],{type:'text/csv;charset=utf-8'}));
   const link = document.createElement('a');
   link.href = href;
@@ -278,10 +409,10 @@ document.addEventListener('click',event=>{
   if(!button)return;
   const b=button.dataset;
   if(b.tab) update({tab:b.tab},{push:true,focus:true});
-  if(b.nav==='comparar') openFilters(state.tab==='tema'||state.tab==='comparar'?state.topic:'total');
-  else if(b.nav) update({tab:b.nav},{push:true,focus:true});
+  if(b.nav) update({tab:b.nav},{push:true,focus:true});
   if(b.filter) openFilters(b.filter);
   if(b.topic) update({tab:'tema',topic:b.topic,panel:'presupuesto'},{push:true,focus:true});
+  if(b.compareTopic) update({tab:'comparar',topic:b.compareTopic,measure:'initial',selected:[...years]},{push:true,focus:true});
   if(b.year) update({year:Number(b.year)});
   if(b.unit) update({unit:b.unit});
   if(b.panel) update({panel:b.panel});
@@ -308,9 +439,17 @@ document.addEventListener('change',event=>{
       if(draft.measure==='accrued') draft.cut='semester';
       drawFilters('[data-draft="measure"]');
     }
+    if(field==='topic'){
+      if(!catalog[draft.topic].execution) draft.measure='initial';
+      drawFilters('#topic-select');
+    }
   }
   if(event.target.id==='base-year') update({baseYear:Number(event.target.value)});
   if(event.target.id==='indicator') update({social:event.target.value});
+  if(event.target.id==='compare-topic'){
+    const topic=event.target.value;
+    update({topic,measure:catalog[topic].execution?state.measure:'initial'});
+  }
 });
 dialog.addEventListener('submit',event=>{
   event.preventDefault();
@@ -322,5 +461,5 @@ dialog.addEventListener('submit',event=>{
   update({...draft,tab:'comparar'},{push:true,focus:true});
 });
 dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});
-window.addEventListener('hashchange',()=>{state=parseState(location.hash);render(true);});
+window.addEventListener('hashchange',()=>{state=parseState(location.hash,catalog);render(true);});
 render();

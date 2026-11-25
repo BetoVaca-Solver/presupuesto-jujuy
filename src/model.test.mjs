@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { compareRows,csvRows,indicatorRows,parseState,stateHash,variations } from './model.mjs';
+import { compareRows,csvRows,indicatorRows,parseState,stateHash,topicCatalog,variations } from './model.mjs';
 const data = JSON.parse(await readFile(new URL('./data.json',import.meta.url)));
 const base = parseState();
 
@@ -68,4 +68,40 @@ test('los indicadores monetarios tienen una observación por mes según la unida
   assert.equal(adjusted.rows.length,new Set(adjusted.rows.map(row=>row.periodo)).size);
   const poverty = indicatorRows(data,{...base,unit:'real'},'Incidencia de pobreza en personas');
   assert.equal(poverty.rows.at(-1).valor,27.6);
+});
+
+test('ingresos, gastos y componentes del saldo cierran en los tres ejercicios',()=>{
+  const rows = topic=>compareRows(data,{...base,topic});
+  const resources = rows('recursos');
+  const spending = rows('total');
+  const financing = rows('saldo');
+  const current = rows('saldo-corriente');
+  const capital = rows('saldo-capital');
+  for(const [i,result] of financing.entries()){
+    assert.equal(resources[i].value-spending[i].value,result.value);
+    assert.equal(current[i].value+capital[i].value,result.value);
+    assert.equal(result.share,null);
+  }
+});
+
+test('las participaciones usan el total correspondiente y conservan el alcance',()=>{
+  const rows = (topic,unit='nominal')=>compareRows(data,{...base,topic,unit});
+  assert.equal(rows('impuestos')[2].share,3257926927267/4046946673988*100);
+  assert.deepEqual(rows('personal','real').map(row=>row.share),rows('personal').map(row=>row.share));
+  const [,,project] = rows('salud');
+  assert.equal(project.share,undefined);
+  assert.equal(project.detail[0].share,915860649632/4045932631010*100);
+  const [missing,,official] = rows('jur-50-capital');
+  assert.equal(missing.value,undefined);
+  assert.equal(official.value,5295325551);
+  assert.equal(rows('jur-90-capital')[2].share,0);
+});
+
+test('se puede compartir y exportar una partida del desglose',()=>{
+  const catalog = topicCatalog(data);
+  const topic = 'func-3-1';
+  const query = parseState('#vista=comparar&tema=func-3-1&indicador=accrued',catalog);
+  assert.equal(query.topic,topic);
+  assert.equal(query.measure,'initial');
+  assert.match(csvRows(compareRows(data,query),query,catalog),/"Atención médica".*"189168478763"/);
 });
