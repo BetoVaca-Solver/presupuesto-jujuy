@@ -120,6 +120,7 @@ select{min-height:44px;border:1px solid var(--border);border-radius:11px;padding
 .year-card:nth-child(3) .fill{background:var(--cream)}
 .change,.overview-table td small{display:block}
 .change{font-weight:750;color:var(--aqua)}
+.overview-table .price{font-size:clamp(.9rem,1.6vw,1.125rem);letter-spacing:normal;line-height:1.3;margin:0;white-space:normal;overflow-wrap:anywhere}
 .overview-table td a{font-size:.82rem}
 .overview-table td{width:23%}
 .overview-item+.overview-item{border-top:1px solid var(--border);margin-top:5px;padding-top:5px}
@@ -142,13 +143,14 @@ select{min-height:44px;border:1px solid var(--border);border-radius:11px;padding
  .year-card strong{font-size:clamp(.73rem,3.05vw,.95rem)}
  .year-tag,.year-card small{font-size:.7rem}
 }
-@media(max-width:540px){
+@media(max-width:640px){
  .overview-table,.overview-table thead,.overview-table tbody{display:block}
  .overview-table tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
  .overview-table thead th:first-child,.overview-table tbody th{grid-column:1/-1}
  .overview-table td{width:auto;padding:4px 2px 9px;border-top:0;font-size:.8rem;min-width:0}
  .overview-table thead th{padding:5px 2px}
  .overview-table tbody th{padding:7px 0 1px}
+ .overview-table .price{font-size:.8rem}
  .overview-table .change,.overview-table td small{font-size:.72rem}
  .overview-table .overview-item a{font-size:.71rem}
  .overview-table td a{display:inline-block}
