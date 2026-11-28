@@ -14,6 +14,7 @@
 <header class="top">
  <div class="brand"><span aria-hidden="true" class="brand-mark"><i></i><i></i><i></i></span><h1>Presupuesto Jujuy</h1></div>
  <div class="top-actions"><button class="secondary" type="button" data-sources aria-haspopup="dialog"><span id="source-icon" aria-hidden="true"></span>Fuentes</button>
+ <button class="primary" type="button" id="generate-report" aria-haspopup="dialog">Generar informe</button>
  <button class="round share" type="button" id="share" aria-label="Compartir esta vista"></button></div>
 </header>
 <main id="contenido" tabindex="-1"></main>
@@ -21,6 +22,8 @@
 <p class="toast" role="status" id="toast"></p>
 <dialog id="filters" aria-labelledby="filter-title"></dialog>
 <dialog id="sources" aria-labelledby="sources-title"></dialog>
+<dialog id="report-dialog" aria-labelledby="report-dialog-title"></dialog>
+<div id="report-print"></div>
 <script id="data" type="application/json">/*DATA*/</script>
 <script>/*SCRIPT*/</script>
 </body>

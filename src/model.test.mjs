@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { compareRows,csvRows,indicatorRows,parseState,stateHash,topicCatalog,variations } from './model.mjs';
+import { buildReport } from './report-model.mjs';
 const data = JSON.parse(await readFile(new URL('./data.json',import.meta.url)));
 const base = parseState();
 
@@ -104,4 +105,28 @@ test('se puede compartir y exportar una partida del desglose',()=>{
   assert.equal(query.topic,topic);
   assert.equal(query.measure,'initial');
   assert.match(csvRows(compareRows(data,query),query,catalog),/"Atención médica".*"189168478763"/);
+});
+
+test('el informe respeta años, valores constantes y alcance del proyecto',()=>{
+  const catalog = topicCatalog(data);
+  const state = {...base,topic:'educacion',unit:'real',baseYear:2026,selected:[2026,2027]};
+  const report = buildReport(data,state,catalog);
+  assert.deepEqual(report.cash.total.map(row=>row.year),[2026,2027]);
+  assert.deepEqual(report.selected,variations(compareRows(data,state)));
+  assert.equal(report.selected[1].value,undefined);
+  assert.equal(report.selected[1].pct,null);
+  assert.ok(report.selected[1].detail.length);
+  assert.deepEqual(report.executionYears,[2026]);
+  assert.equal(report.execution[0].realChange,null);
+});
+
+test('el informe compara el devengado a septiembre y recupera la serie ministerial de Educación',()=>{
+  const catalog = topicCatalog(data);
+  const state = {...base,topic:'jur-40'};
+  const report = buildReport(data,state,catalog);
+  assert.deepEqual(report.selected.map(row=>row.value),[473161593800,634148063682,899153499770]);
+  assert.equal(report.educationCapital[2].value,83191514885);
+  assert.deepEqual(report.executionYears,[2025,2026]);
+  assert.equal(report.execution[2].rows[1].value,99583782604.97);
+  assert.ok(Math.abs(report.execution[2].realChange-(-24.76))<0.02);
 });
